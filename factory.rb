@@ -2,7 +2,7 @@ class Factory
   def self.new(*fields, &methods)
     if fields[0].is_a? String
       name = fields.shift
-      eval "#{name.capitalize} = self.get_class(*fields, &methods)"
+      const_set(name.capitalize, get_class(*fields, &methods))
     else
       self.get_class(*fields, &methods)
     end
@@ -15,89 +15,61 @@ class Factory
       
       define_method :initialize do |*args|
         fields.each do |field|
-          instance_variable_set("@#{field}".to_sym, args.shift)
+          send(:"#{field}=", args.shift)
         end
       end
 
-      define_method :to_s do
-        vals = instance_variables.map { |var| instance_variable_get(var) }
-        vals * ', '
-      end
-      alias_method :inspect, :to_s
-
-      define_method :== do |other|
-        return true if self.object_id == other.object_id
-        self.instance_variables.inject(true) do |f, var|
-          return false unless f
-          begin
-            s = self.instance_variable_get(var)
-            o = other.instance_variable_get(var)
-            f && (s == o)
-          rescue Exception => e
-            puts e.message
-            false
-          end
-        end
+      def ==(other)
+        compare(other) { |f, s, o| f && (s == o)}
       end
 
-      define_method :eql? do |other|
-        return true if self.object_id == other.object_id
-        self.instance_variables.inject(true) do |f, var|
-          return false unless f
-          begin
-            s = self.instance_variable_get(var)
-            o = other.instance_variable_get(var)
-            f && (s.eql? o)
-          rescue  Exception => e
-            puts e.message
-            false
-          end
-        end
+      def eql?(other)
+        compare(other) { |f, s, o| f && (s.eql? o)}
       end
 
-      define_method :[] do |i|
+      def [](i)
         if i.is_a? Integer
           instance_variable_get(instance_variables[i])
         elsif ( (i.is_a? String) || (i.is_a? Symbol) )
-          instance_variable_get("@#{i}".to_sym)
+          instance_variable_get(:"@#{i}")
         end
       end
 
-      define_method :[]= do |i, val|
+      def []=(i, val)
         if i.is_a? Integer
           instance_variable_set(instance_variables[i], val)
         elsif ( (i.is_a? String) || (i.is_a? Symbol) )
-          instance_variable_set("@#{i}".to_sym, val)
+          instance_variable_set(:"@#{i}", val)
         end
       end
 
-      define_method :each do |&block|
+      def each(&block)
         instance_variables.each do |var|
           block.call(instance_variable_get(var)) if block
         end
       end
 
-      define_method :each_pair do |&block|
+      def each_pair(&block)
         instance_variables.each do |var|
           var1 = var.to_s.delete "@"
           block.call(var1, instance_variable_get(var)) if block
         end
       end
 
-      define_method :hash do
+      def hash
         instance_variables.inject(17) do |code, var|
           37*code + instance_variable_get(var).hash
         end
       end
 
-      define_method :length do; instance_variables.size; end
-      alias_method :size, :length
+      def length; instance_variables.size; end
+      alias size length
 
-      define_method :members do
+      def members
        instance_variables.map { |var| var.to_s.delete('@').to_sym }
       end
 
-      define_method :select do |&block|
+      def select(&block)
         instance_variables.inject([]) do |arr, var|
           val = instance_variable_get(var)
           arr.push(val) if block.call(val)
@@ -105,21 +77,21 @@ class Factory
         end
       end
 
-      define_method :to_a do
+      def to_a
         instance_variables.map do |var|
           instance_variable_get(var)
         end
       end
-      alias_method :values, :to_a
+      alias values to_a
 
-      define_method :to_h do
+      def to_h
         instance_variables.inject(Hash.new) do |hash, var|
           hash[var.to_s.delete('@').to_sym] = instance_variable_get(var)
           hash
         end
       end
 
-      define_method :values_at do |*args|
+      def values_at(*args)
         nums = args.inject([]) do |arr, arg|
           if arg.is_a? Integer
             arr << arg
@@ -133,6 +105,23 @@ class Factory
         nums.map { |num| self[num-1] }
       end
 
-    end
-  end
+      protected
+
+      def compare(other)
+        return true if self.object_id == other.object_id
+        self.instance_variables.inject(true) do |f, var|
+          return false unless f
+          begin
+            s = self.instance_variable_get(var)
+            o = other.instance_variable_get(var)
+            yield(f, s, o) if block_given?
+          rescue Exception => e
+            puts e.message
+            false
+          end
+        end
+      end
+
+    end #end Class.new
+  end #end get_class
 end
